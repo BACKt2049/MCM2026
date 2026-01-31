@@ -6,8 +6,8 @@ from scipy.optimize import curve_fit
 # Part A: 物理模型与配置 (Top-Level, 允许被 import)
 # ============================
 COLORS = {
-    'phase1': '#E63946', 'phase2': '#F1FAEE', 'phase3': '#A8DADC',
-    'fit_line': '#1D3557', 'bg_cloud': '#457B9D'
+    'phase1': '#3377ff', 'phase2': '#99bbff', 'phase3': '#ffcc99',
+    'fit_line': '#003399', 'bg_cloud': '#ff4d4d'
 }
 
 def get_W_rocket(t): return 15 * np.exp(-7 * t / 180)
