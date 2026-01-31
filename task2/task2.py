@@ -10,49 +10,53 @@ COLORS = {
     'fit_line': '#1D3557', 'bg_cloud': '#457B9D'
 }
 
-import numpy as np
-
-import numpy as np
-
 def compute_sway_safety_p2(
     t,
-    yearscale_runs=200,     # 每年运行次数
-    mc_samples=500,         # 每次运行的 Monte Carlo 样本
-    L=1e8,
-    v_climb=200,
-    Omega=7.2921159e-5,
-    y_safe=2e4,
+    yearscale_runs=200,      # 每年攀登任务次数
+    mc_samples=500,          # 每次任务的 Monte Carlo 样本数
+    L=1e8,                   # 缆绳长度 100,000 km
+    rho=1300,                # kg/m^3（论文参数）
+    A_avg=3.5e-5,            # m^2（等效平均截面积，62.8 mm^2 的量级）
+    Omega=7.2921159e-5,      # 地球自转角速度
+    v_climb=200,             # 攀登速度 m/s
+    T_eff_0=8e8,             # N，论文量级的等效平均张力
+    y_safe=2e4,              # m，允许最大横向偏移（20 km）
+    control_efficiency=0.3   # 控制系统剩余不确定性比例
 ):
     """
-    年尺度晃动安全因子 p2(t)
+    基于论文力学模型的年尺度晃动安全因子 p2(t)
     """
 
-    # ---------- 1. 科氏诱发横向响应尺度 ----------
+    # ---------- 1. 单位长度质量 ----------
+    mu_line = rho * A_avg   # kg/m
+
+    # ---------- 2. 科氏力诱发横向等效加速度 ----------
     a_c = 2 * Omega * v_climb
 
-    # ---------- 2. 单次运行扰动时间尺度 ----------
-    tau = 600 + 5 * t
+    # ---------- 3. 年度张力演化模型 ----------
+    # 假设：随着技术成熟，等效张力缓慢提高（可替换为更精细模型）
+    T_eff = T_eff_0 * (1 + 0.002 * t)
 
-    mu_Y = 0.5 * a_c * tau**2
-    sigma_Y = 0.35 * mu_Y
+    # ---------- 4. 稳态横向偏移尺度（论文核心） ----------
+    mu_Y = a_c * mu_line * L**2 / T_eff
+
+    # ---------- 5. 不确定性来源（控制 + 外扰） ----------
+    sigma_Y = control_efficiency * mu_Y
 
     annual_safe_ratios = []
 
-    # ---------- 3. 外层：一年内多次运行 ----------
+    # ---------- 6. 年尺度 Monte Carlo ----------
     for _ in range(yearscale_runs):
-
-        # ---------- 4. 内层：一次运行的扰动 ----------
         Y_samples = np.random.normal(mu_Y, sigma_Y, mc_samples)
-
         safe_ratio = np.mean(np.abs(Y_samples) <= y_safe)
         annual_safe_ratios.append(safe_ratio)
 
-    # ---------- 5. 年期望 ----------
+    # ---------- 7. 年期望安全因子 ----------
     return np.mean(annual_safe_ratios)
 
-
-def p3_time_dependent(t, phi=0.0):
-    return 0.05 + 0.03 * np.sin(2 * np.pi / 10.25 * t + phi)
+def p3_time_dependent(t):
+    p = 0.045 / (1 + np.exp(0.08 * (t + 35))) + 0.015 * np.cos(0.55 * t + 0.8) + 0.025
+    return p
 def p1_time_dependent(t):
     return 1.0 / (1.0 + np.exp(-(0.002471 * t - 5.159605)))
 
