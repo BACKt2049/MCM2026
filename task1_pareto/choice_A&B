@@ -1,0 +1,85 @@
+import numpy as np
+
+# ============================
+# 1. 物理模型定义 (保持不变)
+# ============================
+def get_W_rocket(t):
+    # W火 = 15 * e^(-7t/180)
+    return 15 * np.exp(-7 * t / 180)
+
+def get_V_rocket(t):
+    # V火 = 0.03 / (1 + e^(-7t/180))
+    return 0.03 / (1 + np.exp(-7 * t / 180))
+
+def get_W_elevator(t):
+    # W电 = 268.5 * e^(-7t/900)
+    return 268.5 * np.exp(-7 * t / 900)
+
+def get_V_elevator(t):
+    # V电 = 107.4 / (1 + e^(-7t/900))
+    return 107.4 / (1 + np.exp(-7 * t / 900))
+
+# ============================
+# 2. 模拟计算逻辑 (手动积分实现)
+# ============================
+def solve_for_scenario(scenario="elevator", p_val=0, target_V_sum=10000):
+    dt = 0.001  # 减小步长以提高精度
+    t = 0
+    current_V_sum = 0
+    current_W_sum = 0
+    
+    # 模拟直到累积位移达到 10000
+    while current_V_sum < target_V_sum:
+        if scenario == "elevator":
+            v = get_V_elevator(t)
+            w = get_W_elevator(t)
+        else: # rocket 模式
+            # 根据公式：V_total = V_r * p + V_e，但此处为“纯火箭”模式，V_e视为0
+            # 同理 W_total = W_r * p
+            v = get_V_rocket(t) * p_val
+            w = get_W_rocket(t) * p_val
+        
+        # 矩形积分累加
+        current_V_sum += v * dt
+        current_W_sum += w * dt
+        t += dt
+        
+        # 异常跳出，防止计算无限延伸
+        if t > 5000: 
+            break
+            
+    return t, current_W_sum
+
+# ============================
+# 3. 执行计算
+# ============================
+
+print("正在计算，请稍候...")
+
+# 情况 A: 只考虑太空电梯 (p=0)
+t_e, w_e = solve_for_scenario(scenario="elevator")
+
+# 情况 B: 只考虑火箭 (假设发射强度 p 为最大值 10000)
+p_max = 2000
+t_r, w_r = solve_for_scenario(scenario="rocket", p_val=p_max)
+
+# ============================
+# 4. 结果展示
+# ============================
+print("-" * 65)
+print(f"{'策略方案':<20} | {'所需时间 (年)':<15} | {'累积总重量 (W)':<15}")
+print("-" * 65)
+print(f"{'仅太空电梯 (p=0)':<20} | {t_e:<15.2f} | {w_e:<15.2f}")
+print(f"{'仅火箭 (p=2000)':<20} | {t_r:<15.2f} | {w_r:<15.2f}")
+print("-" * 65)
+
+# 效率对比分析
+if w_e > 0 and w_r > 0:
+    efficiency_e = 10000 / w_e
+    efficiency_r = 10000 / w_r
+    print(f"\n[效率分析 - 每单位 W 产生的位移]:")
+    print(f"太空电梯效率: {efficiency_e:.6f}")
+    print(f"火箭运输效率: {efficiency_r:.6f}")
+    print(f"结论: 太空电梯的运输能源效率约是火箭的 {efficiency_e/efficiency_r:.2f} 倍")
+else:
+    print("\n计算异常，请检查公式参数。")
