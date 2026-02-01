@@ -36,30 +36,39 @@ def p3_time_dependent(t):#火箭故障率
 # ==============================================================================
 # 【修改点】：使用数学解析解替代蒙特卡洛循环，极速计算
 # ==============================================================================
-def compute_sway_safety_p2(#电缆安全因子
-    t,
-    yearscale_runs=200,
-    mc_samples=500,
-    L=1e8,
-    rho=1300,
-    A_avg=3.5e-5,
-    Omega=7.2921159e-5,
-    v_climb=200,
-    T_eff_0=8e8,
-    y_safe=2e4,
-    control_efficiency=0.3
-):
+def compute_sway_safety_p2_heavy(t):
+    # 参数设置
+    L = 1e8; rho = 1300; A_avg = 3.5e-5; Omega = 7.2921159e-5
+    v_climb = 200; T_eff_0 = 8e8; y_safe = 2e4; control_efficiency = 0.3
+    mc_samples = 500
+    yearscale_runs = 100 # 降低一点点样本量用于预计算
+
     mu_line = rho * A_avg
     a_c = 2 * Omega * v_climb
     T_eff = T_eff_0 * (1 + 0.002 * t)
     mu_Y = a_c * mu_line * L**2 / T_eff
     sigma_Y = control_efficiency * mu_Y
+    
     annual_safe_ratios = []
     for _ in range(yearscale_runs):
         Y_samples = np.random.normal(mu_Y, sigma_Y, mc_samples)
         safe_ratio = np.mean(np.abs(Y_samples) <= y_safe)
         annual_safe_ratios.append(safe_ratio)
     return np.mean(annual_safe_ratios)
+
+# --- 这里是“查表法”的准备工作 ---
+print("正在生成 p2 安全因子查找表，请稍等几秒钟...")
+# 在 0 到 200 年之间取 100 个点作为参考
+P2_T_LOOKUP = np.linspace(0, T_HORIZON, 100)
+# 只计算这 100 次，不再计算几十万次
+P2_V_LOOKUP = np.array([compute_sway_safety_p2_heavy(ti) for ti in P2_T_LOOKUP])
+print("查找表生成完毕！")
+
+# 以后程序里调用的都是这个“快速版”
+def compute_sway_safety_p2(t):
+    # 使用线性插值，瞬间算出结果
+    return np.interp(t, P2_T_LOOKUP, P2_V_LOOKUP)
+
 # ==============================================================================
 
 #环境成本建模（这里做参考，计算结果为0.42，代码本身此处没有用到）
@@ -422,7 +431,7 @@ if __name__ == "__main__":
     plt.xlabel('Time (year)'); plt.ylabel('Annual rocket launches (count)')
     plt.title('PSO-optimized rocket launch schedule p(t)')
     plt.legend(); plt.grid(True)
-    plt.savefig('p_t_pso_result_28_60.png', dpi=300)
+    plt.savefig('p_t_pso_result_mt.png', dpi=300)
     plt.show()
 
     # cumulative mass plot
