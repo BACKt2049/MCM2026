@@ -102,6 +102,10 @@ class LunarWaterManager:
         current_storage = self.storage_initial
         all_logs = []
         
+        # --- PID 状态记忆变量 (必须在循环外初始化) ---
+        pid_integral = 0.0   # 积分累计
+        pid_prev_error = 0.0 # 上一次误差
+
         print(f"正在生成 {total_years} 年的详细运营表...")
         
         for year in range(total_years):
@@ -140,6 +144,11 @@ class LunarWaterManager:
             
             # 假设平均每年坏 N 次，每次平均修 M 天
             MTTR_DAYS = 20 # 设定每次大修平均 20 天！
+
+            # PID 参数调优 (核心优化点)
+            Kp = 0.10  # 比例系数: 提高响应速度
+            Ki = 0.01  # 积分系数: 消除长期稳态误差 (对抗 P2 衰减)
+            Kd = 0.05  # 微分系数: 抑制突发变化
             
             # --- 日常循环 ---
             for day in range(1, 366):
@@ -164,12 +173,23 @@ class LunarWaterManager:
                         is_elevator_available = False
                         repair_counter = max(1, np.random.poisson(MTTR_DAYS)) - 1
                 
-                # --- P-Control 控制器 ---
+                # --- 2. PID 计算核心 ---
                 TARGET_STORAGE = 600.0
-                Kp = 0.15 
                 
+                # 计算误差
                 error = TARGET_STORAGE - current_storage
-                adjustment = error * Kp
+                
+                # 积分项 (带抗饱和 Anti-Windup)
+                pid_integral += error
+                # 限制积分项最大影响力不超过 5000，防止故障期间积累过大
+                pid_integral = np.clip(pid_integral, -5000, 5000) 
+                
+                # 微分项
+                derivative = error - pid_prev_error
+                pid_prev_error = error
+                
+                # PID 输出: 需要调整的量
+                adjustment = (Kp * error) + (Ki * pid_integral) + (Kd * derivative)
                 
                 # 使用当年的物理参数进行计算
                 expected_efficiency = (1 - p1_fail) * p2_eff 
@@ -179,7 +199,7 @@ class LunarWaterManager:
                 ideal_plan = max(0, ideal_plan)
                 
                 # 分配逻辑
-                status_code = "BALANCE"
+                status_code = "PID_BALANCE"
                 if is_elevator_available:
                     plan_elev = min(ideal_plan, self.elev_max_capacity)
                     remain_need = ideal_plan - plan_elev
@@ -209,6 +229,8 @@ class LunarWaterManager:
                     
                     if real_emergency_gap > 0:
                         plan_rocket = real_emergency_gap / (1 - p3_fail) * 1.1 
+                        # 紧急模式下，我们手动干预了，可以选择重置积分项以免“反应过度”，也可以保留
+                        # pid_integral = 0 
                 
                 # 状态判定
                 else:
