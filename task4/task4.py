@@ -14,7 +14,7 @@ TOTAL_TARGET_MASS = 10000.0   #总任务量 万吨
 DT_STEPS = 800
 T_HORIZON = 200.0#任务时间上限
 P_SEARCH_MAX = 3000.0#火箭发射数上限
-ENV_COST_PER_LAUNCH = 0.05    # (10^9 USD / 发)
+ENV_COST_PER_LAUNCH = 0.042   # (10^9 USD / 发)
 GAMMA_ENV = 0.8
 MC_SAMPLES_SWAY = 500 # 虽然保留变量定义，但在解析解中不再耗时
 
@@ -36,9 +36,9 @@ def p3_time_dependent(t):#火箭故障率
 # ==============================================================================
 # 【修改点】：使用数学解析解替代蒙特卡洛循环，极速计算
 # ==============================================================================
-def compute_sway_safety_p2(
+def compute_sway_safety_p2(#电缆安全因子
     t,
-    yearscale_runs=200, # 这些参数保留是为了保持接口一致，但在解析解中不再影响速度
+    yearscale_runs=200,
     mc_samples=500,
     L=1e8,
     rho=1300,
@@ -49,28 +49,101 @@ def compute_sway_safety_p2(
     y_safe=2e4,
     control_efficiency=0.3
 ):
-    # 1. 计算物理参数（保持原逻辑）
     mu_line = rho * A_avg
     a_c = 2 * Omega * v_climb
     T_eff = T_eff_0 * (1 + 0.002 * t)
-    
-    # 2. 计算正态分布参数 Mean 和 Std
     mu_Y = a_c * mu_line * L**2 / T_eff
     sigma_Y = control_efficiency * mu_Y
-    
-    # 3. 【修改】使用误差函数直接计算概率，不再需要 for 循环和 random
-    # 原理：P(|Y| < y_safe) = CDF(y_safe) - CDF(-y_safe)
-    # 速度提升约 10000 倍
-    sqrt2 = np.sqrt(2)
-    z_upper = (y_safe - mu_Y) / (sigma_Y * sqrt2)
-    z_lower = (-y_safe - mu_Y) / (sigma_Y * sqrt2)
-    
-    # erf 是 Error Function，scipy 提供的标准实现
-    probability = 0.5 * (erf(z_upper) - erf(z_lower))
-    
-    return 0.95
+    annual_safe_ratios = []
+    for _ in range(yearscale_runs):
+        Y_samples = np.random.normal(mu_Y, sigma_Y, mc_samples)
+        safe_ratio = np.mean(np.abs(Y_samples) <= y_safe)
+        annual_safe_ratios.append(safe_ratio)
+    return np.mean(annual_safe_ratios)
 # ==============================================================================
 
+#环境成本建模（这里做参考，计算结果为0.42，代码本身此处没有用到）
+def get_env_factor_per_launch(t, propellant_type='kerosene', altitude_km=30):
+    """
+    计算单次发射的环境治理成本 ($10^9 USD)
+    基于论文第28-29页排放数据和第52页高度修正
+    
+    Parameters:
+    -----------
+    t : float
+        年份 (用于技术演进修正，早期火箭污染高)
+    propellant_type : str
+        'kerosene' (煤油), 'methane' (甲烷), 'solid' (固体), 'hypergolic' (毒发)
+    altitude_km : float
+        平均排放高度 (论文关键：平流层>10km危害放大)
+    """
+    
+    # 基础推进剂质量 (吨) - 随时间优化
+    base_mass = 400 * np.exp(-0.005 * t)  # 技术进步减少燃料
+    
+    # 高度修正系数 alpha(h) - 基于论文第24-25页分层大气
+    if altitude_km < 10:
+        alpha = 1.0
+    elif altitude_km < 25:  # 下平流层-臭氧层敏感区
+        alpha = 5.0
+    elif altitude_km < 50:  # 中平流层
+        alpha = 3.0
+    else:
+        alpha = 1.2
+    
+    # 3年累积效应 tau (论文第38页图2-12)
+    tau = 2.2
+    
+    # 排放物计算 - 基于论文Table 2.3
+    if propellant_type == 'kerosene':
+        # LOx/RP-1: 高黑碳 (0.03吨), 高CO2
+        m_co2 = base_mass * 3.15
+        m_soot = 0.03 * (base_mass/400)  # 黑碳排放系数
+        m_nox = base_mass * 0.0048
+        
+        # 成本计算 (相对权重)
+        co2_cost = m_co2 * 1 * 1.0       # CO2基准
+        soot_cost = m_soot * 5000 * alpha # 黑碳辐射强迫极强 (论文第29页)
+        nox_cost = m_nox * 265 * alpha    # NOx臭氧消耗
+        
+        total = (co2_cost + soot_cost + nox_cost) * tau * 1e-4  # 转10^9 USD
+        
+    elif propellant_type == 'methane':
+        # LOx/CH4: 清洁，黑碳极少 (0.005吨)
+        m_co2 = base_mass * 2.75
+        m_soot = 0.005 * (base_mass/400)  # 甲烷几乎无黑碳
+        
+        co2_cost = m_co2 * 1 * 1.0
+        soot_cost = m_soot * 5000 * alpha  # 显著降低
+        
+        total = (co2_cost + soot_cost) * tau * 1e-4
+        
+    elif propellant_type == 'solid':
+        # 固体助推器: 高HCl (12吨), 高Al2O3 (25吨) - 论文Table 2.3
+        m_co2 = base_mass * 0.9
+        m_hcl = 12.0  # 吨/发 (固定，与推进剂质量成正比)
+        m_al2o3 = 25.0
+        m_soot = 0.02
+        
+        co2_cost = m_co2 * 1 * 1.0
+        hcl_cost = m_hcl * 300 * alpha   # HCl臭氧消耗成本 (蒙特利尔议定书相关)
+        al_cost = m_al2o3 * 50 * 2.0     # 氧化铝颗粒
+        soot_cost = m_soot * 5000 * alpha
+        
+        total = (co2_cost + hcl_cost + al_cost + soot_cost) * tau * 1e-4
+        
+    elif propellant_type == 'hypergolic':
+        # 偏二甲肼/四氧化二氮: 有毒，高NOx
+        m_co2 = base_mass * 2.8
+        m_nox = base_mass * 0.006
+        toxic_penalty = 0.01  # 剧毒额外惩罚 ($10^9)
+        
+        total = (m_co2 * 1 + m_nox * 265 * alpha) * tau * 1e-4 + toxic_penalty
+        
+    else:
+        total = 0.05  # 默认值
+        
+    return total
 
 # （4）指标计算（保持不动）
 def calculate_metrics(t, p, p1, p2, p3):
