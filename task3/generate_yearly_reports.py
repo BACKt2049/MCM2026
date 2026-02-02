@@ -82,15 +82,15 @@ class LunarWaterManager:
     def get_cost_rocket(self, t_year):
         """单位: 万美元/吨。火箭成本可能随技术成熟而降低"""
         # 示例: 初始500，每年降低 5% -> return 500 * (0.95 ** t_year)
-        return 5.0
+        return  15 * np.exp(-7 * t_year / 180)/(0.03 / (1 + np.exp(-7 * t_year / 180)))
 
     def get_cost_elev(self, t_year):
         """单位: 万美元/吨。电梯维护成本通常较为稳定或随老化略增"""
-        return 5.0
+        return 268.5 * np.exp(-7 * t_year / 900)/(107.4 / (1 + np.exp(-7 * t_year / 900)))
 
     def get_cost_recycle(self, t_year):
-        """单位: 万美元/吨。循环技术进步可能降低成本"""
-        return 0.05
+       
+        return 10
 
     def get_discount_rate(self, t_year):
         """无单位(百分比)。年贴现率"""
@@ -324,4 +324,3 @@ if __name__ == "__main__":
     df_all = manager.generate_all_years_schedule(total_years=20)
     df_all.to_csv(f"{OUTPUT_DIR}/All_Years_Summary.csv", index=False)
     print("全部完成！总表已保存为 All_Years_Summary.csv")
-
