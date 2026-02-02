@@ -58,7 +58,7 @@ class LunarWaterManager:
         当前逻辑: 常数 0.05 (未来可改为随技术成熟降低)
         """
         # 示例: return 0.05 * np.exp(-0.05 * t_year) (随时间技术成熟)
-        return 0.05
+        return 0.05 / (1 + np.exp(0.05 * (t_year - 50))) + 0.02
 
     # ==============================================================
     #  经济函数接口 (可随年份 t 变化)
@@ -324,3 +324,4 @@ if __name__ == "__main__":
     df_all = manager.generate_all_years_schedule(total_years=20)
     df_all.to_csv(f"{OUTPUT_DIR}/All_Years_Summary.csv", index=False)
     print("全部完成！总表已保存为 All_Years_Summary.csv")
+
